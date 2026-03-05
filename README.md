@@ -39,5 +39,6 @@ Run:
 ## Notes
 
 - Device enumeration uses ALSA PCM hints and shows output-capable entries.
+- A `Hide technical device names` checkbox is enabled by default, so the list prefers human-readable labels.
 - The test button plays a 1-second 880 Hz sine tone.
 - This is an MVP foundation. Next iterations can add PipeWire/Pulse-aware testing, non-blocking playback, and better device labels.

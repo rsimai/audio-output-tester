@@ -10,9 +10,11 @@ typedef struct {
     GtkWidget *device_list;
     GtkWidget *filter_entry;
     GtkWidget *status_label;
+    GtkWidget *hide_names_check;
     char *default_device;
     char *last_snapshot;
     gboolean using_pulse;
+    gboolean hide_technical_names;
     guint refresh_source_id;
 } AppState;
 
@@ -23,6 +25,35 @@ static GtkWidget *build_device_row(AppState *app,
                                    const char *backend);
 static int play_test_tone(const char *device_name);
 static void load_devices(AppState *app);
+
+static void choose_visible_labels(AppState *app,
+                                  const char *device_name,
+                                  const char *preferred_display,
+                                  const char *preferred_desc,
+                                  const char *fallback_desc,
+                                  const char **display_out,
+                                  const char **desc_out) {
+    const char *display = preferred_display;
+    if (!display || display[0] == '\0') {
+        display = device_name;
+    }
+
+    const char *desc = preferred_desc;
+    if (!desc) {
+        desc = "";
+    }
+
+    if (app->hide_technical_names) {
+        if (display == device_name && preferred_desc && preferred_desc[0] != '\0') {
+            display = preferred_desc;
+        }
+
+        desc = fallback_desc ? fallback_desc : "";
+    }
+
+    *display_out = display;
+    *desc_out = desc;
+}
 
 static void set_small_label_markup(GtkWidget *label, const char *text) {
     gchar *escaped = g_markup_escape_text(text ? text : "", -1);
@@ -351,10 +382,19 @@ static int load_pulse_sinks(AppState *app) {
                     (current_desc && current_desc[0] != '\0') ? current_desc : current_name;
                 const char *subtitle =
                     (current_desc && current_desc[0] != '\0') ? current_name : "PipeWire/Pulse sink";
+                const char *visible_name = NULL;
+                const char *visible_desc = NULL;
+                choose_visible_labels(app,
+                                      current_name,
+                                      display_name,
+                                      subtitle,
+                                      "PipeWire/Pulse sink",
+                                      &visible_name,
+                                      &visible_desc);
                 GtkWidget *row = build_device_row(app,
                                                   current_name,
-                                                  display_name,
-                                                  subtitle,
+                                                  visible_name,
+                                                  visible_desc,
                                                   "pulse");
                 gtk_container_add(GTK_CONTAINER(app->device_list), row);
                 added++;
@@ -390,10 +430,19 @@ static int load_pulse_sinks(AppState *app) {
             (current_desc && current_desc[0] != '\0') ? current_desc : current_name;
         const char *subtitle =
             (current_desc && current_desc[0] != '\0') ? current_name : "PipeWire/Pulse sink";
+        const char *visible_name = NULL;
+        const char *visible_desc = NULL;
+        choose_visible_labels(app,
+                              current_name,
+                              display_name,
+                              subtitle,
+                              "PipeWire/Pulse sink",
+                              &visible_name,
+                              &visible_desc);
         GtkWidget *row = build_device_row(app,
                                           current_name,
-                                          display_name,
-                                          subtitle,
+                                          visible_name,
+                                          visible_desc,
                                           "pulse");
         gtk_container_add(GTK_CONTAINER(app->device_list), row);
         added++;
@@ -459,7 +508,17 @@ static int load_alsa_output_devices(AppState *app) {
                      snd_ctl_card_info_get_name(card_info),
                      snd_pcm_info_get_name(pcminfo));
 
-            GtkWidget *row = build_device_row(app, name, name, desc, "alsa");
+            const char *visible_name = NULL;
+            const char *visible_desc = NULL;
+            choose_visible_labels(app,
+                                  name,
+                                  name,
+                                  desc,
+                                  "ALSA output device",
+                                  &visible_name,
+                                  &visible_desc);
+
+            GtkWidget *row = build_device_row(app, name, visible_name, visible_desc, "alsa");
             gtk_container_add(GTK_CONTAINER(app->device_list), row);
             added++;
         }
@@ -908,10 +967,20 @@ static void on_filter_icon_press(GtkEntry *entry,
     }
 }
 
+static void on_hide_names_toggled(GtkToggleButton *toggle, gpointer user_data) {
+    AppState *app = (AppState *)user_data;
+    app->hide_technical_names = gtk_toggle_button_get_active(toggle);
+
+    /* Force a redraw even if device snapshot itself did not change. */
+    g_clear_pointer(&app->last_snapshot, g_free);
+    load_devices(app);
+}
+
 int main(int argc, char **argv) {
     gtk_init(&argc, &argv);
 
     AppState app = {0};
+    app.hide_technical_names = TRUE;
 
     app.window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(app.window), "Audio Device Tester");
@@ -924,11 +993,14 @@ int main(int argc, char **argv) {
 
     GtkWidget *header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     GtkWidget *title = gtk_label_new("Playback Devices");
+    app.hide_names_check = gtk_check_button_new_with_label("Hide technical device names");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(app.hide_names_check), TRUE);
 
     gtk_widget_set_halign(title, GTK_ALIGN_START);
     gtk_label_set_xalign(GTK_LABEL(title), 0.0f);
 
     gtk_box_pack_start(GTK_BOX(header), title, TRUE, TRUE, 0);
+    gtk_box_pack_end(GTK_BOX(header), app.hide_names_check, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(root), header, FALSE, FALSE, 0);
 
     app.filter_entry = gtk_entry_new();
@@ -953,6 +1025,7 @@ int main(int argc, char **argv) {
 
     g_signal_connect(app.filter_entry, "changed", G_CALLBACK(on_filter_changed), &app);
     g_signal_connect(app.filter_entry, "icon-press", G_CALLBACK(on_filter_icon_press), &app);
+    g_signal_connect(app.hide_names_check, "toggled", G_CALLBACK(on_hide_names_toggled), &app);
 
     load_devices(&app);
     app.refresh_source_id = g_timeout_add_seconds(2, on_auto_refresh, &app);
