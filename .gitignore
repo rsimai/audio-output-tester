@@ -1,0 +1,12 @@
+# CMake build output
+build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Common editor/OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
