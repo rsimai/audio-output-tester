@@ -2,6 +2,10 @@
 
 Minimal desktop GUI to enumerate playback devices and play a short test tone on each one.
 
+## Screenshot
+
+![Audio Device Tester screenshot](./screenshot.png)
+
 ## Goals
 
 - Simple GUI for audio output testing.
