@@ -976,7 +976,122 @@ static void on_hide_names_toggled(GtkToggleButton *toggle, gpointer user_data) {
     load_devices(app);
 }
 
+static int cmd_cycle_sink(void) {
+    /* Try PipeWire/Pulse first. */
+    gchar *output = NULL;
+    if (run_command_capture("pactl list short sinks", &output) && output && output[0] != '\0') {
+        gchar **lines = g_strsplit(output, "\n", -1);
+        g_free(output);
+
+        GPtrArray *sinks = g_ptr_array_new_with_free_func(g_free);
+        for (int i = 0; lines[i] != NULL; i++) {
+            if (lines[i][0] == '\0') {
+                continue;
+            }
+            gchar **cols = g_strsplit(lines[i], "\t", 0);
+            if (cols[1] && cols[1][0] != '\0') {
+                g_ptr_array_add(sinks, g_strdup(cols[1]));
+            }
+            g_strfreev(cols);
+        }
+        g_strfreev(lines);
+
+        if (sinks->len == 0) {
+            g_ptr_array_free(sinks, TRUE);
+            return 1;
+        }
+
+        gchar *current = get_default_pulse_sink();
+        int current_idx = -1;
+        if (current) {
+            for (guint i = 0; i < sinks->len; i++) {
+                if (strcmp((char *)sinks->pdata[i], current) == 0) {
+                    current_idx = (int)i;
+                    break;
+                }
+            }
+        }
+        g_free(current);
+
+        int next_idx = (current_idx + 1) % (int)sinks->len;
+        gboolean ok = set_default_pulse_sink((char *)sinks->pdata[next_idx]);
+        g_ptr_array_free(sinks, TRUE);
+        return ok ? 0 : 1;
+    }
+    g_free(output);
+
+    /* Fall back to ALSA. */
+    GPtrArray *devices = g_ptr_array_new_with_free_func(g_free);
+    int card = -1;
+    if (snd_card_next(&card) >= 0) {
+        while (card >= 0) {
+            char hw_name[32];
+            snprintf(hw_name, sizeof(hw_name), "hw:%d", card);
+            snd_ctl_t *ctl = NULL;
+            if (snd_ctl_open(&ctl, hw_name, 0) >= 0) {
+                int dev = -1;
+                while (snd_ctl_pcm_next_device(ctl, &dev) >= 0 && dev >= 0) {
+                    snd_pcm_info_t *pcminfo = NULL;
+                    snd_pcm_info_alloca(&pcminfo);
+                    snd_pcm_info_set_device(pcminfo, dev);
+                    snd_pcm_info_set_subdevice(pcminfo, 0);
+                    snd_pcm_info_set_stream(pcminfo, SND_PCM_STREAM_PLAYBACK);
+                    if (snd_ctl_pcm_info(ctl, pcminfo) >= 0) {
+                        char name[64];
+                        snprintf(name, sizeof(name), "hw:%d,%d", card, dev);
+                        g_ptr_array_add(devices, g_strdup(name));
+                    }
+                }
+                snd_ctl_close(ctl);
+            }
+            if (snd_card_next(&card) < 0) {
+                break;
+            }
+        }
+    }
+
+    if (devices->len == 0) {
+        g_ptr_array_free(devices, TRUE);
+        return 1;
+    }
+
+    gchar *current_alsa = read_current_default_device();
+    int current_idx = -1;
+    if (current_alsa) {
+        for (guint i = 0; i < devices->len; i++) {
+            if (strcmp((char *)devices->pdata[i], current_alsa) == 0) {
+                current_idx = (int)i;
+                break;
+            }
+        }
+    }
+    g_free(current_alsa);
+
+    int next_idx = (current_idx + 1) % (int)devices->len;
+    gboolean ok = write_default_device((char *)devices->pdata[next_idx], NULL);
+    g_ptr_array_free(devices, TRUE);
+    return ok ? 0 : 1;
+}
+
 int main(int argc, char **argv) {
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+            printf("Usage: audio-device-tester [OPTION]\n"
+                   "\n"
+                   "Without options, opens the GTK GUI.\n"
+                   "\n"
+                   "Options:\n"
+                   "  --cycle   Silently advance to the next audio output sink and exit.\n"
+                   "            Useful as a hotkey binding. Tries PipeWire/Pulse first,\n"
+                   "            falls back to ALSA. Exits 0 on success, 1 on failure.\n"
+                   "  --help    Show this help message and exit.\n");
+            return 0;
+        }
+        if (strcmp(argv[i], "--cycle") == 0) {
+            return cmd_cycle_sink();
+        }
+    }
+
     gtk_init(&argc, &argv);
 
     AppState app = {0};

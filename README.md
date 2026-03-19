@@ -40,9 +40,22 @@ Run:
 ./build/audio-device-tester
 ```
 
+## Command-line options
+
+```
+audio-device-tester [OPTION]
+```
+
+| Option | Description |
+|--------|-------------|
+| *(none)* | Open the GTK GUI. |
+| `--cycle` | Silently advance to the next audio output sink and exit. Wraps around after the last sink. Tries PipeWire/Pulse first, falls back to ALSA. Exits 0 on success, 1 on failure. Useful as a hotkey binding. |
+| `--help` | Print usage information and exit. |
+
 ## Notes
 
 - Device enumeration uses ALSA PCM hints and shows output-capable entries.
 - A `Hide technical device names` checkbox is enabled by default, so the list prefers human-readable labels.
 - The test button plays a 1-second 880 Hz sine tone.
-- This is an MVP foundation. Next iterations can add PipeWire/Pulse-aware testing, non-blocking playback, and better device labels.
+- PipeWire/Pulse sinks are preferred; ALSA hardware devices are used as a fallback.
+- The `--cycle` option is designed for hotkey/script use: it produces no output and exits immediately.

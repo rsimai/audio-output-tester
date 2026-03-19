@@ -4,11 +4,17 @@ project(audio_device_tester C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+include(GNUInstallDirs)
+
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GTK3 REQUIRED gtk+-3.0)
 pkg_check_modules(ALSA REQUIRED alsa)
 
 add_executable(audio-device-tester src/main.c)
+
+install(TARGETS audio-device-tester
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
 
 target_include_directories(audio-device-tester PRIVATE
     ${GTK3_INCLUDE_DIRS}
